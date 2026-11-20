@@ -1,0 +1,137 @@
+grammar = {}
+n = int(input("Enter number of productions: "))
+for i in range(n):
+    p = input("Enter production: ").replace(" ", "")
+    lhs, rhs = p.split("=")
+    if lhs not in grammar:
+        grammar[lhs] = []
+    for r in rhs.split("|"):
+        grammar[lhs].append("" if r == "#" else r)
+start = list(grammar.keys())[0]
+aug = start + "'"
+# Create augmented grammar
+g = {aug: [start]}
+g.update(grammar)
+# Find closure
+def closure(items):
+    items = set(items)
+    while True:
+        new = set(items)
+        for lhs, rhs, dot in items:
+            if dot < len(rhs):
+                ch = rhs[dot]
+                if ch in g:
+                    for p in g[ch]:
+                        new.add((ch, p, 0))
+        if new == items:
+            break
+        items = new
+    return frozenset(items)
+# Find GOTO
+def goto(items, symbol):
+    new = set()
+    for lhs, rhs, dot in items:
+        if dot < len(rhs) and rhs[dot] == symbol:
+            new.add((lhs, rhs, dot + 1))
+    if new:
+        return closure(new)
+    return None
+# Construct LR(0) states
+states = [closure({(aug, start, 0)})]
+transitions = {}
+i = 0
+while i < len(states):
+    symbols = set()
+    for lhs, rhs, dot in states[i]:
+        if dot < len(rhs):
+            symbols.add(rhs[dot])
+    for symbol in symbols:
+        new = goto(states[i], symbol)
+        if new:
+            if new not in states:
+                states.append(new)
+            transitions[(i, symbol)] = states.index(new)
+    i += 1
+# Construct ACTION and GOTO table
+action = {}
+gototable = {}
+conflict = False
+terminals = set()
+for lhs in grammar:
+    for p in grammar[lhs]:
+        for ch in p:
+            if ch not in grammar:
+                terminals.add(ch)
+terminals.add('$')
+productions = []
+for lhs in grammar:
+    for rhs in grammar[lhs]:
+        productions.append((lhs, rhs))
+for i, state in enumerate(states):
+    for (s, symbol), target in transitions.items():
+        if s == i:
+            if symbol in grammar:
+                gototable[(i, symbol)] = target
+            else:
+                action[(i, symbol)] = "S" + str(target)
+    for lhs, rhs, dot in state:
+        if dot == len(rhs):
+            if lhs == aug:
+                action[(i, '$')] = "ACCEPT"
+            else:
+                number = productions.index((lhs, rhs)) + 1
+                for t in terminals:
+                    key = (i, t)
+                    value = "R" + str(number)
+                    if key in action and action[key] != value:
+                        print("Conflict:", key, action[key], value)
+                        conflict = True
+                    else:
+                        action[key] = value
+# Display states
+print("\nLR(0) STATES")
+for i, state in enumerate(states):
+    print("\nI", i)
+    for lhs, rhs, dot in sorted(state):
+        p = rhs[:dot] + "." + rhs[dot:]
+        print(lhs, "->", p if rhs else ".")
+if conflict:
+    print("\nGrammar is NOT LR(0)")
+else:
+    print("\nGrammar is LR(0)")
+    print("\nProductions:")
+    for i, (lhs, rhs) in enumerate(productions, 1):
+        print(i, lhs, "->", rhs if rhs else "#")
+    # Parse input string
+    string = input("\nEnter input string: ") + '$'
+    stack = [0]
+    pos = 0
+    print("\nStack\t\tInput\t\tAction")
+    while True:
+        state = stack[-1]
+        symbol = string[pos]
+        act = action.get((state, symbol))
+        if act is None:
+            print("String Rejected")
+            break
+        if act == "ACCEPT":
+            print("String Accepted")
+            break
+        elif act[0] == 'S':
+            stack.append(symbol)
+            stack.append(int(act[1:]))
+            pos += 1
+            print(stack, "\t", string[pos:], "\tShift")
+        elif act[0] == 'R':
+            num = int(act[1:])
+            lhs, rhs = productions[num - 1]
+            for j in range(2 * len(rhs)):
+                stack.pop()
+            state = stack[-1]
+            if (state, lhs) not in gototable:
+                print("String Rejected")
+                break
+            stack.append(lhs)
+            stack.append(gototable[(state, lhs)])
+            print(stack, "\t", string[pos:], "\tReduce",
+                  lhs, "->", rhs if rhs else '#')
