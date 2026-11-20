@@ -1,0 +1,145 @@
+grammar = {}
+n = int(input("Enter number of productions: "))
+for i in range(n):
+    p = input("Enter production: ").replace(" ", "")
+    lhs, rhs = p.split("=")
+    if lhs not in grammar:
+        grammar[lhs] = []
+    grammar[lhs].extend(rhs.split("|"))
+start = list(grammar.keys())[0]
+aug = start + "'"
+g = {aug: [start]}
+g.update(grammar)
+# FIRST function
+def FIRST(s):
+    result = set()
+    if s == "":
+        return {'#'}
+    for ch in s:
+        if ch not in g:
+            result.add(ch)
+            return result
+        for p in g[ch]:
+            if p == '#':
+                result.add('#')
+            else:
+                result.update(FIRST(p) - {'#'})
+        if '#' not in set().union(
+            *(FIRST(p) for p in g[ch])
+        ):
+            return result
+    result.add('#')
+    return result
+# Closure
+def closure(items):
+    items = set(items)
+    while True:
+        new = set(items)
+        for lhs, rhs, dot, la in items:
+            if dot < len(rhs):
+                ch = rhs[dot]
+                if ch in g:
+                    look = FIRST(rhs[dot + 1:] + la)
+                    for p in g[ch]:
+                        p = '' if p == '#' else p
+                        for a in look - {'#'}:
+                            new.add((ch, p, 0, a))
+        if new == items:
+            break
+        items = new
+    return frozenset(items)
+# GOTO
+def GOTO(items, symbol):
+    new = set()
+    for lhs, rhs, dot, la in items:
+        if dot < len(rhs) and rhs[dot] == symbol:
+            new.add((lhs, rhs, dot + 1, la))
+    return closure(new) if new else None
+# Generate CLR states
+states = [closure({(aug, start, 0, '$')})]
+transitions = {}
+i = 0
+while i < len(states):
+    symbols = set()
+    for lhs, rhs, dot, la in states[i]:
+        if dot < len(rhs):
+            symbols.add(rhs[dot])
+    for symbol in symbols:
+        new = GOTO(states[i], symbol)
+        if new:
+            if new not in states:
+                states.append(new)
+            transitions[(i, symbol)] = states.index(new)
+    i += 1
+# Productions
+productions = []
+for lhs in grammar:
+    for rhs in grammar[lhs]:
+        productions.append((lhs, '' if rhs == '#' else rhs))
+# ACTION and GOTO tables
+action = {}
+goto_table = {}
+conflict = False
+def add_action(key, value):
+    global conflict
+    if key in action and action[key] != value:
+        conflict = True
+    else:
+        action[key] = value
+for i, state in enumerate(states):
+    for (s, symbol), target in transitions.items():
+        if s == i:
+            if symbol in grammar:
+                goto_table[(i, symbol)] = target
+            else:
+                add_action((i, symbol), ('S', target))
+    for lhs, rhs, dot, la in state:
+        if dot == len(rhs):
+            if lhs == aug:
+                add_action((i, '$'), ('ACC', 0))
+            else:
+                num = productions.index((lhs, rhs)) + 1
+                add_action((i, la), ('R', num))
+# Display result
+print("\nCLR(1) STATES")
+for i, state in enumerate(states):
+    print("\nI", i)
+    for lhs, rhs, dot, la in sorted(state):
+        print(lhs, "->",
+              rhs[:dot] + "." + rhs[dot:], ",", la)
+if conflict:
+    print("\nGrammar is NOT CLR(1)")
+else:
+    print("\nGrammar is CLR(1)")
+    # Input string
+    string = input("\nEnter input string: ") + '$'
+    # Single-character grammar symbols
+    tokens = list(string)
+    stack = [0]
+    pos = 0
+    print("\nStack\t\tInput\t\tAction")
+    while True:
+        state = stack[-1]
+        symbol = tokens[pos]
+        act = action.get((state, symbol))
+        if act is None:
+            print("String Rejected")
+            break
+        if act[0] == 'ACC':
+            print("String Accepted")
+            break
+        elif act[0] == 'S':
+            stack.append(symbol)
+            stack.append(act[1])
+            pos += 1
+            print(stack, "\t", ''.join(tokens[pos:]), "\tShift")
+        elif act[0] == 'R':
+            num = act[1]
+            lhs, rhs = productions[num - 1]
+            for j in range(2 * len(rhs)):
+                stack.pop()
+            state = stack[-1]
+            stack.append(lhs)
+            stack.append(goto_table[(state, lhs)])
+            print(stack, "\t", ''.join(tokens[pos:]),
+                  "\tReduce", lhs, "->", rhs if rhs else '#')
