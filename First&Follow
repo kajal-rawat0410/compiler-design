@@ -1,0 +1,69 @@
+from collections import defaultdict
+grammar = defaultdict(list)
+n = int(input("Enter number of productions: "))
+print("Enter productions (Example: E=TR):")
+for i in range(n):
+    production = input().replace(" ", "")
+    lhs, rhs = production.split("=")
+    for alternative in rhs.split("|"):
+        grammar[lhs].append(alternative)
+first = {}
+follow = {}
+def FIRST(symbol):
+    if not symbol.isupper():
+        return {symbol}
+    if symbol in first:
+        return first[symbol]
+    result = set()
+    for production in grammar[symbol]:
+        if production == '#':
+            result.add('#')
+            continue
+        for char in production:
+            temp = FIRST(char)
+            result.update(temp - {'#'})
+            if '#' not in temp:
+                break
+        else:
+            result.add('#')
+    first[symbol] = result
+    return result
+def FIRST_string(string):
+    result = set()
+    for char in string:
+        temp = FIRST(char)
+        result.update(temp - {'#'})
+        if '#' not in temp:
+            return result
+    result.add('#')
+    return result
+def FOLLOW(symbol):
+    if symbol in follow:
+        return follow[symbol]
+    result = set()
+    if symbol == start_symbol:
+        result.add('$')
+    for lhs in grammar:
+        for production in grammar[lhs]:
+            for i, char in enumerate(production):
+                if char == symbol:
+                    remaining = production[i + 1:]
+                    if remaining:
+                        temp = FIRST_string(remaining)
+                        result.update(temp - {'#'})
+
+                        if '#' in temp and lhs != symbol:
+                            result.update(FOLLOW(lhs))
+                    elif lhs != symbol:
+                        result.update(FOLLOW(lhs))
+    follow[symbol] = result
+    return result
+start_symbol = next(iter(grammar))
+# Calculate FIRST
+print("\nFIRST SETS:")
+for symbol in grammar:
+    print(f"FIRST({symbol}) = {FIRST(symbol)}")
+# Calculate FOLLOW
+print("\nFOLLOW SETS:")
+for symbol in grammar:
+    print(f"FOLLOW({symbol}) = {FOLLOW(symbol)}")
