@@ -1,0 +1,182 @@
+n = int(input("Enter number of productions: "))
+grammar = {}
+for _ in range(n):
+    p = input("Enter production: ").replace(" ", "")
+    left, right = p.split("=")
+    grammar.setdefault(left, []).extend(right.split("|"))
+start = list(grammar.keys())[0]
+nonterminals = set(grammar.keys())
+# Find terminals
+terminals = set()
+for rules in grammar.values():
+    for rhs in rules:
+        for ch in rhs:
+            if ch not in nonterminals and ch != '#':
+                terminals.add(ch)
+terminals.add('$')
+# FIRST sets
+FIRST = {nt: set() for nt in nonterminals}
+changed = True
+while changed:
+    changed = False
+    for nt in nonterminals:
+        for rhs in grammar[nt]:
+            old = len(FIRST[nt])
+            if rhs == '#':
+                FIRST[nt].add('#')
+            else:
+                nullable = True
+                for ch in rhs:
+                    if ch in terminals:
+                        FIRST[nt].add(ch)
+                        nullable = False
+                        break
+                    else:
+                        FIRST[nt].update(FIRST[ch] - {'#'})
+                        if '#' not in FIRST[ch]:
+                            nullable = False
+                            break
+                if nullable:
+                    FIRST[nt].add('#')
+            if len(FIRST[nt]) != old:
+                changed = True
+# FOLLOW sets
+FOLLOW = {nt: set() for nt in nonterminals}
+FOLLOW[start].add('$')
+changed = True
+while changed:
+    changed = False
+    for nt in nonterminals:
+        for rhs in grammar[nt]:
+            if rhs == '#':
+                continue
+            for i, ch in enumerate(rhs):
+                if ch in nonterminals:
+                    old = len(FOLLOW[ch])
+                    beta = rhs[i + 1:]
+                    if beta == "":
+                        FOLLOW[ch].update(FOLLOW[nt])
+                    else:
+                        nullable = True
+                        for symbol in beta:
+                            if symbol in terminals:
+                                FOLLOW[ch].add(symbol)
+                                nullable = False
+                                break
+                            else:
+                                FOLLOW[ch].update(FIRST[symbol] - {'#'})
+                                if '#' not in FIRST[symbol]:
+                                    nullable = False
+                                    break
+                        if nullable:
+                            FOLLOW[ch].update(FOLLOW[nt])
+                    if len(FOLLOW[ch]) != old:
+                        changed = True
+print("\nFIRST sets:")
+for nt in nonterminals:
+    print(nt, "=", FIRST[nt])
+print("\nFOLLOW sets:")
+for nt in nonterminals:
+    print(nt, "=", FOLLOW[nt])
+# Augmented grammar
+augmented = {"Z": [start]}
+all_grammar = {"Z": [start], **grammar}
+productions = [("Z", start)]
+for nt in grammar:
+    for rhs in grammar[nt]:
+        productions.append((nt, rhs))
+def closure(items):
+    items = set(items)
+    changed = True
+    while changed:
+        changed = False
+        for p, dot in list(items):
+            lhs, rhs = productions[p]
+            if dot < len(rhs):
+                symbol = rhs[dot]
+                if symbol in nonterminals:
+                    for i, (a, b) in enumerate(productions):
+                        if a == symbol and (i, 0) not in items:
+                            items.add((i, 0))
+                            changed = True
+    return frozenset(items)
+def goto(items, symbol):
+    moved = set()
+    for p, dot in items:
+        lhs, rhs = productions[p]
+        if dot < len(rhs) and rhs[dot] == symbol:
+            moved.add((p, dot + 1))
+    return closure(moved) if moved else frozenset()
+# Canonical LR(0) states
+states = [closure({(0, 0)})]
+transitions = {}
+i = 0
+symbols = terminals - {'$'} | nonterminals
+while i < len(states):
+    for symbol in symbols:
+        new_state = goto(states[i], symbol)
+        if new_state:
+            if new_state not in states:
+                states.append(new_state)
+            j = states.index(new_state)
+            transitions[(i, symbol)] = j
+    i += 1
+# Build SLR parsing table
+ACTION = {}
+GOTO = {}
+conflict = False
+def add_action(key, value):
+    global conflict
+    if key in ACTION and ACTION[key] != value:
+        print("SLR(1) conflict:", key, ACTION[key], value)
+        conflict = True
+    else:
+        ACTION[key] = value
+for i, state in enumerate(states):
+    for p, dot in state:
+        lhs, rhs = productions[p]
+        if dot < len(rhs):
+            symbol = rhs[dot]
+            if symbol in terminals - {'$'}:
+                add_action((i, symbol),
+                           ("shift", transitions[(i, symbol)]))
+            elif symbol in nonterminals:
+                GOTO[(i, symbol)] = transitions[(i, symbol)]
+        else:
+            if p == 0:
+                add_action((i, '$'), ("accept",))
+            else:
+                for symbol in FOLLOW[lhs]:
+                    add_action((i, symbol), ("reduce", p))
+if conflict:
+    print("\nGrammar is NOT SLR(1)")
+else:
+    print("\nGrammar is SLR(1)")
+    # Parse input
+    string = input("\nEnter input string: ") + "$"
+    stack = [0]
+    pos = 0
+    while True:
+        state = stack[-1]
+        symbol = string[pos]
+        action = ACTION.get((state, symbol))
+        if action is None:
+            print("String rejected")
+            break
+        if action[0] == "shift":
+            stack.extend([symbol, action[1]])
+            pos += 1
+        elif action[0] == "reduce":
+            p = action[1]
+            lhs, rhs = productions[p]
+            if rhs != '#':
+                for _ in range(2 * len(rhs)):
+                    stack.pop()
+            next_state = GOTO.get((stack[-1], lhs))
+            if next_state is None:
+                print("String rejected")
+                break
+            stack.extend([lhs, next_state])
+        elif action[0] == "accept":
+            print("String accepted")
+            break
