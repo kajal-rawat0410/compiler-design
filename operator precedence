@@ -1,0 +1,39 @@
+grammar = {}
+n = int(input("Enter number of productions: "))
+for i in range(n):
+    p = input("Enter production: ").replace(" ", "")
+    lhs, rhs = p.split("=")
+    if lhs not in grammar:
+        grammar[lhs] = []
+    grammar[lhs].extend(rhs.split("|"))
+# Input string
+string = input("Enter input string: ") + "$"
+# Operator precedence table
+precedence = {
+    '+': {'+': '>', '*': '<', 'i': '<', '$': '>'},
+    '*': {'+': '>', '*': '>', 'i': '<', '$': '>'},
+    'i': {'+': '>', '*': '>', '$': '>'},
+    '$': {'+': '<', '*': '<', 'i': '<', '$': 'A'}
+}
+stack = ['$']
+i = 0
+print("\nStack\t\tInput\t\tAction")
+while True:
+    top = stack[-1]
+    if top not in precedence or string[i] not in precedence[top]:
+        print("String Rejected")
+        break
+    relation = precedence[top][string[i]]
+    if relation == '<' or relation == '=':
+        stack.append(string[i])
+        print(stack, "\t", string[i:], "\tShift")
+        i += 1
+    elif relation == '>':
+        stack.pop()
+        print(stack, "\t", string[i:], "\tReduce")
+    elif relation == 'A':
+        print("String Accepted")
+        break
+    else:
+        print("String Rejected")
+        break
